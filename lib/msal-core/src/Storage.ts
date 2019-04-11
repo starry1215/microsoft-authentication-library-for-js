@@ -3,20 +3,20 @@
 
 import { Constants } from "./Constants";
 import { AccessTokenCacheItem } from "./AccessTokenCacheItem";
-import { CacheLocation } from "./Configuration";
 import { CacheKeys } from "./Constants";
 
 /**
+ * Singleton
  * @hidden
  */
-export class Storage {// Singleton
+export class Storage {
 
   private static instance: Storage;
   private localStorageSupported: boolean;
   private sessionStorageSupported: boolean;
-  private cacheLocation: CacheLocation;
+  private cacheLocation: string;
 
-  constructor(cacheLocation: CacheLocation) {
+  constructor(cacheLocation: string) {
     if (Storage.instance) {
       return Storage.instance;
     }
@@ -32,7 +32,12 @@ export class Storage {// Singleton
     return Storage.instance;
   }
 
-    // add value to storage
+    /**
+     * add value to storage
+     * @param key
+     * @param value
+     * @param enableCookieStorage
+     */
     setItem(key: string, value: string, enableCookieStorage?: boolean): void {
         if (window[this.cacheLocation]) {
             window[this.cacheLocation].setItem(key, value);
@@ -42,7 +47,11 @@ export class Storage {// Singleton
         }
     }
 
-    // get one item by key from storage
+    /**
+     * get one item by key from storage
+     * @param key
+     * @param enableCookieStorage
+     */
     getItem(key: string, enableCookieStorage?: boolean): string {
         if (enableCookieStorage && this.getItemCookie(key)) {
             return this.getItemCookie(key);
@@ -53,20 +62,30 @@ export class Storage {// Singleton
         return null;
     }
 
-    // remove value from storage
+    /**
+     * remove value from storage
+     * @param key
+     */
     removeItem(key: string): void {
         if (window[this.cacheLocation]) {
             return window[this.cacheLocation].removeItem(key);
         }
     }
 
-    // clear storage (remove all items from it)
+    /**
+     * clear storage (remove all items from it)
+     */
     clear(): void {
         if (window[this.cacheLocation]) {
             return window[this.cacheLocation].clear();
         }
     }
 
+    /**
+     * Retrieve all the accessTokens from the cache
+     * @param clientId
+     * @param homeAccountIdentifier
+     */
     getAllAccessTokens(clientId: string, homeAccountIdentifier: string): Array<AccessTokenCacheItem> {
         const results: Array<AccessTokenCacheItem> = [];
         let accessTokenCacheItem: AccessTokenCacheItem;
@@ -89,6 +108,11 @@ export class Storage {// Singleton
         return results;
     }
 
+    /**
+     * Remove account and authority information from the cache
+     * @param authorityKey
+     * @param acquireTokenAccountKey
+     */
     removeAcquireTokenEntries(authorityKey: string, acquireTokenAccountKey: string): void {
         const storage = window[this.cacheLocation];
         if (storage) {
@@ -103,6 +127,9 @@ export class Storage {// Singleton
         }
     }
 
+    /**
+     * reset cache
+     */
     resetCacheItems(): void {
         const storage = window[this.cacheLocation];
         if (storage) {
@@ -120,6 +147,12 @@ export class Storage {// Singleton
         }
     }
 
+    /**
+     * store an item in the cookies
+     * @param cName
+     * @param cValue
+     * @param expires
+     */
     setItemCookie(cName: string, cValue: string, expires?: number): void {
         let cookieStr = cName + "=" + cValue + ";";
         if (expires) {
@@ -130,6 +163,10 @@ export class Storage {// Singleton
         document.cookie = cookieStr;
     }
 
+    /**
+     * retrieve a cache item from cookies
+     * @param cName
+     */
     getItemCookie(cName: string): string {
         const name = cName + "=";
         const ca = document.cookie.split(";");
@@ -145,12 +182,19 @@ export class Storage {// Singleton
         return "";
     }
 
+    /**
+     * set the expiry for cookies
+     * @param cookieLife
+     */
     setExpirationCookie(cookieLife: number): string {
         const today = new Date();
         const expr = new Date(today.getTime() + cookieLife * 24 * 60 * 60 * 1000);
         return expr.toUTCString();
     }
 
+    /**
+     * clear all cookies stored
+     */
     clearCookie(): void {
         this.setItemCookie(Constants.nonceIdToken, "", -1);
         this.setItemCookie(Constants.stateLogin, "", -1);

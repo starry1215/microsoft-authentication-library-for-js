@@ -4,9 +4,6 @@
 import { Logger } from "./Logger";
 import { Utils } from "./Utils";
 
-// make CacheStorage a fixed type to limit it to specific inputs
-export type CacheLocation = "localStorage" | "sessionStorage";
-
 /**
  * Defaults for the Configuration Options
  */
@@ -47,7 +44,7 @@ export type AuthOptions = {
  *                              By default this flag is set to false.
  */
 export type CacheOptions = {
-  cacheLocation?: CacheLocation;
+  cacheLocation?: string;
   storeAuthStateInCookie?: boolean;
 };
 

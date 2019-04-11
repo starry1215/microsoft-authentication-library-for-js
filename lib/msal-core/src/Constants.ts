@@ -110,6 +110,14 @@ export class ErrorDescription {
 /**
  * @hidden
  */
+export const CacheStorageType = {
+    LOCAL: "localStorage",
+    SESSION: "sessionStorage"
+};
+
+/**
+ * @hidden
+ */
 export const CacheKeys = {
     AUTHORITY: "msal_authority",
     ACQUIRE_TOKEN_USER: "msal.acquireTokenUser"

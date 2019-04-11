@@ -7,7 +7,7 @@ import { AccessTokenValue } from "./AccessTokenValue";
 import { ServerRequestParameters } from "./ServerRequestParameters";
 import { Authority } from "./Authority";
 import { ClientInfo } from "./ClientInfo";
-import { Constants, ErrorCodes, ErrorDescription, SSOTypes, PromptState } from "./Constants";
+import { Constants, ErrorCodes, ErrorDescription, SSOTypes, PromptState, CacheStorageType } from "./Constants";
 import { IdToken } from "./IdToken";
 import { Logger } from "./Logger";
 import { Storage } from "./Storage";
@@ -187,11 +187,11 @@ export class UserAgentApplication {
     this.loginInProgress = false;
     this.acquireTokenInProgress = false;
 
-    // cache keys msal - typescript throws an error if any value other than "localStorage" or "sessionStorage" is passed
-    try {
+    // set and initialize the cache storage - throws an error if any value other than "localStorage" or "sessionStorage" is passed
+    if ([CacheStorageType.LOCAL, CacheStorageType.SESSION].indexOf(this.config.cache.cacheLocation) >= 0) {
         this.cacheStorage = new Storage(this.config.cache.cacheLocation);
-    } catch (e) {
-        this.config.system.logger.error("CacheLocation can be set only to 'localStorage' or 'sessionStorage' ");
+    } else {
+        throw ClientConfigurationError.createInvalidCacheLocationConfigError(this.config.cache.cacheLocation);
     }
 
     // Initialize window handling code
