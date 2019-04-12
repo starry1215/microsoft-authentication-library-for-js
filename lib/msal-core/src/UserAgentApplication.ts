@@ -14,7 +14,7 @@ import { Storage } from "./Storage";
 import { Account } from "./Account";
 import { Utils } from "./Utils";
 import { AuthorityFactory } from "./AuthorityFactory";
-import { Configuration } from "./Configuration";
+import { Configuration, buildConfiguration } from "./Configuration";
 import { AuthenticationParameters, QPDict } from "./AuthenticationParameters";
 import { ClientConfigurationError } from "./error/ClientConfigurationError";
 import { AuthError } from "./error/AuthError";
@@ -157,9 +157,14 @@ export class UserAgentApplication {
     return this.authorityInstance.CanonicalAuthority;
   }
 
+  public getAuthorityInstance(): Authority {
+    return this.authorityInstance;
+  }
+
   /**
    * Initialize a UserAgentApplication with a given clientId and authority.
    * @constructor
+   *
    * @param {string} clientId - The clientID of your application, you should get this from the application registration portal.
    * @param {string} authority - A URL indicating a directory that MSAL can use to obtain tokens.
    * - In Azure AD, it is of the form https://&lt;instance>/&lt;tenant&gt;,\ where &lt;instance&gt; is the directory host (e.g. https://login.microsoftonline.com) and &lt;tenant&gt; is a identifier within the directory itself (e.g. a domain associated to the tenant, such as contoso.onmicrosoft.com, or the GUID representing the TenantID property of the directory)
@@ -171,7 +176,7 @@ export class UserAgentApplication {
   constructor(configuration: Configuration) {
 
     // Set the Configuration
-    this.config = configuration;
+    this.config = buildConfiguration(configuration);
 
     // Set the callback boolean
     this.redirectCallbacksSet = false;
@@ -235,19 +240,11 @@ export class UserAgentApplication {
 
     this.redirectCallbacksSet = true;
 
-    const urlHash = window.location.hash;
-    const isCallback = this.isCallback(urlHash);
-
     // On the server 302 - Redirect, handle this
     if (!this.config.framework.isAngular) {
-      if (isCallback) {
-        this.handleAuthenticationResponse(urlHash);
-      }
-      else {
-        const pendingCallback = this.cacheStorage.getItem(Constants.urlHash);
-        if (pendingCallback) {
-          this.processCallBack(pendingCallback, null);
-        }
+      const pendingCallback = this.cacheStorage.getItem(Constants.urlHash);
+      if (pendingCallback) {
+        this.processCallBack(pendingCallback, null);
       }
     }
   }
@@ -298,13 +295,12 @@ export class UserAgentApplication {
         let tokenRequest: AuthenticationParameters = this.buildIDTokenRequest(request);
 
         this.silentLogin = true;
-        this.acquireTokenSilent(tokenRequest).then((idToken) => {
+        this.acquireTokenSilent(tokenRequest).then(response => {
           this.silentLogin = false;
           this.logger.info("Unified cache call is successful");
 
-          // TODO: Change callback to return AuthResponse
           if (this.tokenReceivedCallback) {
-            this.tokenReceivedCallback.call(this, null, idToken, null, Constants.idToken, this.getAccountState(this.silentAuthenticationState));
+            this.tokenReceivedCallback(response);
           }
         }, (error) => {
           this.silentLogin = false;
@@ -335,7 +331,7 @@ export class UserAgentApplication {
     this.loginInProgress = true;
 
     // TODO: Make this more readable - is authorityInstance changed, what is happening with the return for AuthorityKey?
-    this.authorityInstance.ResolveEndpointsAsync().then(() => {
+    this.authorityInstance.resolveEndpointsAsync().then(() => {
 
       // create the Request to be sent to the Server
       let serverAuthenticationRequest = new ServerRequestParameters(
@@ -373,7 +369,7 @@ export class UserAgentApplication {
       this.setAuthorityCache(serverAuthenticationRequest.state, this.authority);
 
       // build URL to navigate to proceed with the login
-      let urlNavigate = serverAuthenticationRequest.createNavigateUrl(scopes)  + Constants.response_mode_fragment;
+      let urlNavigate = serverAuthenticationRequest.createNavigateUrl(scopes) + Constants.response_mode_fragment;
 
       // Redirect user to login URL
       this.promptUser(urlNavigate);
@@ -422,7 +418,8 @@ export class UserAgentApplication {
     // Track the acquireToken progress
     this.acquireTokenInProgress = true;
 
-    acquireTokenAuthority.ResolveEndpointsAsync().then(() => {
+    // TODO: Set response type here
+    acquireTokenAuthority.resolveEndpointsAsync().then(() => {
       // On Fulfillment
       const responseType = this.getTokenType(account, request.scopes, false);
       serverAuthenticationRequest = new ServerRequestParameters(
@@ -486,9 +483,9 @@ export class UserAgentApplication {
    * @param {string} extraQueryParameters - Key-value pairs to pass to the STS during the interactive authentication flow.
    * @returns {Promise.<string>} - A Promise that is fulfilled when this function has completed, or rejected if an error was raised. Returns the token or error.
    */
-  loginPopup(request?: AuthenticationParameters): Promise<string> {
+  loginPopup(request?: AuthenticationParameters): Promise<AuthResponse> {
     // Creates navigate url; saves value in cache; redirect user to AAD
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<AuthResponse>((resolve, reject) => {
       // Fail if login is already in progress
       if (this.loginInProgress) {
         return reject(ClientAuthError.createLoginInProgressError());
@@ -519,12 +516,11 @@ export class UserAgentApplication {
 
           this.silentLogin = true;
           this.acquireTokenSilent(tokenRequest)
-              .then((idToken) => {
+              .then(response => {
             this.silentLogin = false;
             this.logger.info("Unified cache call is successful");
 
-            // TODO: Change resolve to return AuthResponse object
-            resolve(idToken);
+            resolve(response);
           }, (error) => {
 
             this.silentLogin = false;
@@ -566,7 +562,7 @@ export class UserAgentApplication {
     this.loginInProgress = true;
 
     // Resolve endpoint
-    this.authorityInstance.ResolveEndpointsAsync().then(() => {
+    this.authorityInstance.resolveEndpointsAsync().then(() => {
       let serverAuthenticationRequest = new ServerRequestParameters(this.authorityInstance, this.clientId, scopes, ResponseTypes.id_token, this.getRedirectUri(), this.config.auth.state);
 
       // populate QueryParameters (sid/login_hint/domain_hint) and any other extraQueryParameters set by the developer
@@ -635,8 +631,8 @@ export class UserAgentApplication {
    * @param {string} extraQueryParameters - Key-value pairs to pass to the STS during the  authentication flow.
    * @returns {Promise.<string>} - A Promise that is fulfilled when this function has completed, or rejected if an error was raised. Returns the token or error.
    */
-  acquireTokenPopup(request: AuthenticationParameters): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+  acquireTokenPopup(request: AuthenticationParameters): Promise<AuthResponse> {
+    return new Promise<AuthResponse>((resolve, reject) => {
       // Validate and filter scopes (the validate function will throw if validation fails)
       this.validateInputScope(request.scopes, true);
 
@@ -669,7 +665,7 @@ export class UserAgentApplication {
         return;
       }
 
-      acquireTokenAuthority.ResolveEndpointsAsync().then(() => {
+      acquireTokenAuthority.resolveEndpointsAsync().then(() => {
         // On fullfillment
         const responseType = this.getTokenType(account, request.scopes, false);
         serverAuthenticationRequest = new ServerRequestParameters(
@@ -866,8 +862,8 @@ export class UserAgentApplication {
    * @returns {Promise.<string>} - A Promise that is fulfilled when this function has completed, or rejected if an error was raised. Resolved with token or rejected with error.
    */
   @resolveTokenOnlyIfOutOfIframe
-  acquireTokenSilent(request: AuthenticationParameters): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+  acquireTokenSilent(request: AuthenticationParameters): Promise<AuthResponse> {
+    return new Promise<AuthResponse>((resolve, reject) => {
 
       // Validate and filter scopes (the validate function will throw if validation fails)
       this.validateInputScope(request.scopes, true);
@@ -920,21 +916,24 @@ export class UserAgentApplication {
         serverAuthenticationRequest.queryParameters = Utils.generateQueryParametersString(queryParameters);
         serverAuthenticationRequest.extraQueryParameters = Utils.generateQueryParametersString(request.extraQueryParameters);
       }
-
-      const cacheResult = this.getCachedToken(serverAuthenticationRequest, account);
+      let authErr: AuthError;
+      let cacheResultResponse;
+      try {
+        cacheResultResponse = this.getCachedToken(serverAuthenticationRequest, account);
+      } catch (e) {
+        authErr = e;
+      }
 
       // resolve/reject based on cacheResult
-      if (cacheResult) {
-        if (cacheResult.token) {
-          this.logger.info("Token is already in cache for scope:" + scope);
-          resolve(cacheResult.token);
-          return null;
-        }
-        else if (cacheResult.errorDesc || cacheResult.error) {
-          this.logger.infoPii(cacheResult.errorDesc + ":" + cacheResult.error);
-          reject(cacheResult.errorDesc + Constants.resourceDelimiter + cacheResult.error);
-          return null;
-        }
+      if (cacheResultResponse) {
+        this.logger.info("Token is already in cache for scope:" + scope);
+        resolve(cacheResultResponse);
+        return null;
+      }
+      else if (authErr) {
+        this.logger.infoPii(authErr.errorCode + ":" + authErr.errorMessage);
+        reject(authErr);
+        return null;
       }
       // else proceed with login
       else {
@@ -945,7 +944,7 @@ export class UserAgentApplication {
             serverAuthenticationRequest.authorityInstance = request.authority ? AuthorityFactory.CreateInstance(request.authority, this.config.auth.validateAuthority) : this.authorityInstance;
         }
         // cache miss
-        return serverAuthenticationRequest.authorityInstance.ResolveEndpointsAsync()
+        return serverAuthenticationRequest.authorityInstance.resolveEndpointsAsync()
         .then(() => {
           // refresh attempt with iframe
           // Already renewing for this scope, callback when we get the token.
@@ -1100,9 +1099,9 @@ export class UserAgentApplication {
    * @ignore
    * @hidden
    */
-  private addHintParameters(accontObj: Account, qParams: QPDict, serverReqParams: ServerRequestParameters): QPDict {
+  private addHintParameters(accountObj: Account, qParams: QPDict, serverReqParams: ServerRequestParameters): QPDict {
 
-    const account = accontObj ? accontObj : this.getAccount();
+    const account = accountObj ? accountObj : this.getAccount();
 
     // This is a final check for all queryParams added so far; preference order: sid > login_hint
     // sid cannot be passed along with login_hint, hence we check both are not populated yet in queryParameters so far
@@ -1280,26 +1279,28 @@ export class UserAgentApplication {
       this.cacheStorage.clearCookie();
       const accountState = this.getAccountState(this.cacheStorage.getItem(Constants.stateLogin, this.inCookie));
 
-      if (parentCallback) {
-        parentCallback(response, authErr);
-      } else {
-        if (authErr) {
-          this.errorReceivedCallback(authErr, accountState);
-        } else if (response) {
-          if ((stateInfo.requestType === Constants.renewToken) || response.accessToken) {
-            if (window.parent !== window) {
-              this.logger.verbose("Window is in iframe, acquiring token silently");
-            } else {
-              this.logger.verbose("acquiring token interactive in progress");
-            }
-            response.tokenType = Constants.accessToken;
+      if (response) {
+        if ((stateInfo.requestType === Constants.renewToken) || response.accessToken) {
+          if (window.parent !== window) {
+            this.logger.verbose("Window is in iframe, acquiring token silently");
+          } else {
+            this.logger.verbose("acquiring token interactive in progress");
           }
-          else if (stateInfo.requestType === Constants.login) {
-            response.tokenType = Constants.idToken;
-          }
-          this.tokenReceivedCallback(response);
+          response.tokenType = Constants.accessToken;
         }
+        else if (stateInfo.requestType === Constants.login) {
+          response.tokenType = Constants.idToken;
+        }
+        if (!parentCallback) {
+          this.tokenReceivedCallback(response);
+          return;
+        }
+      } else if (!parentCallback) {
+        this.errorReceivedCallback(authErr, accountState);
+        return;
       }
+
+      parentCallback(response, authErr);
     } catch (err) {
       this.logger.error("Error occurred in token received callback function: " + err);
       throw ClientAuthError.createErrorInCallbackFunction(err.toString());
@@ -1359,7 +1360,7 @@ export class UserAgentApplication {
       if (self.config.auth.navigateToLoginRequestUrl) {
         self.cacheStorage.setItem(Constants.urlHash, hash);
         if (window.parent === window && !isPopup) {
-          window.location.href = self.cacheStorage.getItem(Constants.loginRequest, this.inCookie);
+          window.location.href = self.cacheStorage.getItem(Constants.loginRequest, self.inCookie);
         }
         return;
       }
@@ -1456,7 +1457,7 @@ export class UserAgentApplication {
    */
   // TODO: There is a lot of duplication code in this function, rework this sooner than later, may be as a part of Error??
   // TODO: Only used in ATS - we should separate this
-  private getCachedToken(serverAuthenticationRequest: ServerRequestParameters, account: Account): CacheResult {
+  private getCachedToken(serverAuthenticationRequest: ServerRequestParameters, account: Account): AuthResponse {
     let accessTokenCacheItem: AccessTokenCacheItem = null;
     const scopes = serverAuthenticationRequest.scopes;
 
@@ -1487,26 +1488,14 @@ export class UserAgentApplication {
         serverAuthenticationRequest.authorityInstance = AuthorityFactory.CreateInstance(accessTokenCacheItem.key.authority, this.config.auth.validateAuthority);
       }
       // if more than one cached token is found
-      // TODO: Return custom error here
-      // TODO: Check that accessToken is only possible tokenType for this error type
       else if (filteredItems.length > 1) {
-        return {
-          errorDesc: "The cache contains multiple tokens satisfying the requirements. Call AcquireToken again providing more requirements like authority",
-          token: null,
-          error: "multiple_matching_tokens_detected"
-        };
+        throw ClientAuthError.createMultipleMatchingTokensInCacheError(scopes.toString());
       }
       // if no match found, check if there was a single authority used
       else {
         const authorityList = this.getUniqueAuthority(tokenCacheItems, "authority");
         if (authorityList.length > 1) {
-          // TODO: Return custom error here
-          // TODO: Check that accessToken is only possible tokenType for this error type
-          return {
-            errorDesc: "Multiple authorities found in the cache. Pass authority in the API overload.",
-            token: null,
-            error: "multiple_matching_tokens_detected"
-          };
+          throw ClientAuthError.createMultipleAuthoritiesInCacheError(scopes.toString());
         }
 
         serverAuthenticationRequest.authorityInstance = AuthorityFactory.CreateInstance(authorityList[0], this.config.auth.validateAuthority);
@@ -1533,26 +1522,36 @@ export class UserAgentApplication {
       }
       else {
         // if more than cached token is found
-        // TODO: Return custom error here
-        // TODO: Check that accessToken is only possible tokenType for this error type
-        return {
-          errorDesc: "The cache contains multiple tokens satisfying the requirements.Call AcquireToken again providing more requirements like authority",
-          token: null,
-          error: "multiple_matching_tokens_detected"
-        };
+        throw ClientAuthError.createMultipleMatchingTokensInCacheError(scopes.toString());
       }
     }
 
     if (accessTokenCacheItem != null) {
-      const expired = Number(accessTokenCacheItem.value.expiresIn);
+      let expired = Number(accessTokenCacheItem.value.expiresIn);
       // If expiration is within offset, it will force renew
       const offset = this.config.system.tokenRenewalOffsetSeconds || 300;
       if (expired && (expired > Utils.now() + offset)) {
-        return {
-          errorDesc: null,
-          token: accessTokenCacheItem.value.accessToken,
-          error: null
+        const idToken = new IdToken(accessTokenCacheItem.value.idToken);
+        if (!account) {
+          account = this.getAccount();
+          if (!account) {
+            throw AuthError.createUnexpectedError("Account should not be null here.");
+          }
+        }
+        const aState = this.getAccountState(this.cacheStorage.getItem(Constants.stateLogin, this.inCookie));
+        let response : AuthResponse = {
+          uniqueId: "",
+          tenantId: "",
+          tokenType: (accessTokenCacheItem.value.idToken === accessTokenCacheItem.value.accessToken) ? Constants.idToken : Constants.accessToken,
+          idToken: idToken,
+          accessToken: accessTokenCacheItem.value.accessToken,
+          scopes: serverAuthenticationRequest.scopes,
+          expiresOn: new Date(expired * 1000),
+          account: account,
+          accountState: aState,
         };
+        Utils.setResponseIdToken(response, idToken);
+        return response;
       } else {
         this.cacheStorage.removeItem(JSON.stringify(filteredItems[0].key));
         return null;
@@ -1704,8 +1703,13 @@ export class UserAgentApplication {
       this.cacheStorage.setItem(JSON.stringify(accessTokenKey), JSON.stringify(accessTokenValue));
 
       accessTokenResponse.accessToken  = parameters[Constants.accessToken];
-      accessTokenResponse.expiresIn = expiresIn;
       accessTokenResponse.scopes = consentedScopes;
+      let exp = Number(expiresIn);
+      if (exp) {
+        accessTokenResponse.expiresOn = new Date((Utils.now() + exp) * 1000);
+      } else {
+        this.logger.error("Could not parse expiresIn parameter. Given value: " + expiresIn);
+      }
     }
     // if the response does not contain "scope" - scope is usually client_id and the token will be id_token
     else {
@@ -1714,12 +1718,16 @@ export class UserAgentApplication {
       // Generate and cache accessTokenKey and accessTokenValue
       const accessTokenKey = new AccessTokenKey(authority, this.clientId, scope, clientObj.uid, clientObj.utid);
 
-      // TODO: since there is no access_token, this is also set to id_token?
       const accessTokenValue = new AccessTokenValue(parameters[Constants.idToken], parameters[Constants.idToken], response.idToken.expiration, clientInfo);
       this.cacheStorage.setItem(JSON.stringify(accessTokenKey), JSON.stringify(accessTokenValue));
       accessTokenResponse.scopes = [scope];
       accessTokenResponse.accessToken = parameters[Constants.idToken];
-      accessTokenResponse.expiresIn = response.idToken.expiration;
+      let exp = Number(response.idToken.expiration);
+      if (exp) {
+        accessTokenResponse.expiresOn = new Date(exp * 1000);
+      } else {
+        this.logger.error("Could not parse expiresIn parameter");
+      }
     }
     return accessTokenResponse;
   }
@@ -1742,7 +1750,7 @@ export class UserAgentApplication {
       idToken: null,
       accessToken: null,
       scopes: [],
-      expiresIn: "",
+      expiresOn: null,
       account: null,
       accountState: "",
     };
@@ -2105,7 +2113,7 @@ export class UserAgentApplication {
    * @param scopes
    * @param account
    */
-  protected getCachedTokenInternal(scopes : Array<string> , account: Account): CacheResult {
+  protected getCachedTokenInternal(scopes : Array<string> , account: Account): AuthResponse {
     // Get the current session's account object
     const accountObject = account ? account : this.getAccount();
     if (!accountObject) {
@@ -2173,7 +2181,7 @@ export class UserAgentApplication {
   /**
    * tracks if login is in progress
    */
-  getLoginInProgress(): boolean {
+  protected getLoginInProgress(): boolean {
     const pendingCallback = this.cacheStorage.getItem(Constants.urlHash);
     if (pendingCallback) {
         return true;
@@ -2218,7 +2226,7 @@ export class UserAgentApplication {
    * @ignore
    * @hidden
    */
-  private getRedirectUri(): string {
+  public getRedirectUri(): string {
     if (typeof this.config.auth.redirectUri === "function") {
       return this.config.auth.redirectUri();
     }
@@ -2230,7 +2238,7 @@ export class UserAgentApplication {
    * @ignore
    * @hidden
    */
-  private getPostLogoutRedirectUri(): string {
+  public getPostLogoutRedirectUri(): string {
     if (typeof this.config.auth.postLogoutRedirectUri === "function") {
       return this.config.auth.postLogoutRedirectUri();
     }
