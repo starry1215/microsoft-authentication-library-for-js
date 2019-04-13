@@ -1418,13 +1418,13 @@ export class UserAgentApplication {
     // incoming callback needs to be looked up to find the request type
 
     // loginRedirect
-    if (stateResponse.state === this.cacheStorage.getItem(Constants.stateLogin, this.inCookie) || stateResponse.state === this.silentAuthenticationState) { // loginRedirect
+    if (stateResponse.state === this.cacheStorage.getItem(Constants.stateLogin, this.inCookie) || stateResponse.state === this.silentAuthenticationState) {
       stateResponse.requestType = Constants.login;
       stateResponse.stateMatch = true;
       return stateResponse;
     }
     // acquireTokenRedirect
-    else if (stateResponse.state === this.cacheStorage.getItem(Constants.stateAcquireToken, this.inCookie)) { //acquireTokenRedirect
+    else if (stateResponse.state === this.cacheStorage.getItem(Constants.stateAcquireToken, this.inCookie)) {
       stateResponse.requestType = Constants.renewToken;
       stateResponse.stateMatch = true;
       return stateResponse;
@@ -1675,7 +1675,7 @@ export class UserAgentApplication {
     let accessTokenResponse = { ...response };
     const clientObj: ClientInfo = new ClientInfo(clientInfo);
 
-    // if the response contains "scope"
+    // if the response contains "scope" - it is an access_token
     if (parameters.hasOwnProperty("scope")) {
       // read the scopes
       scope = parameters["scope"];
